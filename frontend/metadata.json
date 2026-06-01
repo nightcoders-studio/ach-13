@@ -1,0 +1,7 @@
+{
+  "name": "HabaGet",
+  "description": "Platform edukasi Bahasa Aceh berbasis kamus, latihan harian, gamifikasi, dan layanan les.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
