@@ -1,4 +1,16 @@
+export type UserRole = 'user' | 'admin';
+
+export interface AuthCredentials {
+    type: 'login' | 'register';
+    name: string;
+    email: string;
+    password: string;
+}
+
 export interface UserProgress {
+    uid?: string;
+    email?: string | null;
+    role?: UserRole;
     name: string;
     xp: number;
     streak: number;
@@ -8,8 +20,9 @@ export interface UserProgress {
     masteredWords: number;
     subscribed: boolean;
     pretestCompleted: boolean;
-    leaderboardCategory: 'Aneuk Mit' | 'Aneuk Muda' | 'Ureung Chiek' | null;
+    leaderboardCategory: 'Aneuk Miet' | 'Ureung Muda' | 'Ureung Chiek' | 'Petuah' | null;
     notifications: { id: string; message: string; read: boolean; date: string }[];
+    lastActiveDate?: string; // ISO date string 'YYYY-MM-DD' for streak tracking
 }
 
 export interface Question {

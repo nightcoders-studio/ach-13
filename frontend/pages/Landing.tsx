@@ -49,7 +49,7 @@ export const Landing: React.FC = () => {
                     habaget
                 </h1>
                 <p className="text-lg text-gray-600 mb-10 font-bold max-w-xs">
-                    Cara seru, gratis, dan efektif untuk menguasai bahasa dan budaya Aceh.
+                    Meureuno Bahasa Makin Get.
                 </p>
                 
                 <div className="w-full max-w-xs space-y-4">

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle, XCircle, ArrowRight } from 'lucide-react';
+import { CheckCircle, XCircle } from 'lucide-react';
 import { Button } from '../components/Button';
 
 interface PretestProps {
@@ -11,6 +11,7 @@ export const Pretest: React.FC<PretestProps> = ({ onComplete }) => {
     const navigate = useNavigate();
     const [currentIndex, setCurrentIndex] = useState(0);
     const [score, setScore] = useState(0);
+    const scoreRef = useRef(0);
     const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
     const [isChecking, setIsChecking] = useState(false);
 
@@ -40,7 +41,9 @@ export const Pretest: React.FC<PretestProps> = ({ onComplete }) => {
         setIsChecking(true);
         
         if (opt === questions[currentIndex].a) {
-            setScore(s => s + 1);
+            const nextScore = scoreRef.current + 1;
+            scoreRef.current = nextScore;
+            setScore(nextScore);
         }
     };
 
@@ -51,7 +54,7 @@ export const Pretest: React.FC<PretestProps> = ({ onComplete }) => {
             setIsChecking(false);
         } else {
             // Calculate percentage score
-            const finalScore = (score / questions.length) * 100;
+            const finalScore = (scoreRef.current / questions.length) * 100;
             onComplete(finalScore);
             navigate('/papan');
         }

@@ -10,12 +10,36 @@ import { GoogleAuth } from 'google-auth-library';
 import fetch from 'node-fetch';
 import rateLimit from 'express-rate-limit';
 import { WebSocketServer, WebSocket } from 'ws';
+import { authenticateFirebaseToken, requireAdmin } from './auth-middleware.js';
+import { ensureUserProfile, updateUserProgress } from './profile-store.js';
+import { generateSpeech } from './tts-handler.js';
+import { enforceUserQuota } from './usage-limiter.js';
+import { getWeeklyLeaderboard, getAllTimeLeaderboard, getUserRank } from './leaderboard-store.js';
+import { submitContribution, getContributions, getUserContributions, reviewContribution } from './community-store.js';
+import { getCachedTranslation, cacheTranslation } from './dictionary-cache.js';
 
 const app = express();
 app.use(express.json({limit: process?.env?.API_PAYLOAD_MAX_SIZE || "7mb"}));
 
-const PORT = process?.env?.API_BACKEND_PORT || 5000;
-const API_BACKEND_HOST = process?.env?.API_BACKEND_HOST || "127.0.0.1";
+// Set COOP/COEP headers for cross-origin isolation compatibility
+app.use((_req, res, next) => {
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+  next();
+});
+
+// Serve static frontend files in production
+import { fileURLToPath } from 'url';
+import path from 'path';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const publicDir = path.join(__dirname, 'public');
+import fs from 'fs';
+if (fs.existsSync(publicDir)) {
+  app.use(express.static(publicDir));
+}
+
+const PORT = Number(process?.env?.PORT || process?.env?.API_BACKEND_PORT || 5000);
+const API_BACKEND_HOST = process?.env?.API_BACKEND_HOST || "0.0.0.0";
 
 const GOOGLE_CLOUD_LOCATION = process?.env?.GOOGLE_CLOUD_LOCATION;
 const GOOGLE_CLOUD_PROJECT = process?.env?.GOOGLE_CLOUD_PROJECT;
@@ -36,7 +60,7 @@ app.set('trust proxy', 1 /* number of proxies between user and server */);
 // Removing it exposes your service to DoS attacks and unexpected costs.
 const proxyLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // Set ratelimit window at 15min (in ms)
-    max: 100, // Limit each IP to 100 requests per window 
+    max: 60, // Limit each IP to 60 requests per window (reduced from 100)
     standardHeaders: true, // Return rate limit info in the "RateLimit-*" headers
     legacyHeaders: false, // no "X-RateLimit-*" headers
     message: {
@@ -44,8 +68,75 @@ const proxyLimiter = rateLimit({
       message: 'You have exceed the request limit, please try again later.'
     },
 });
+
+// TTS rate limiter - more restrictive since TTS is expensive
+const ttsLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 20, // Limit each IP to 20 TTS requests per 15min
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      error: 'Too many TTS requests',
+      message: 'Batas permintaan audio tercapai. Coba lagi nanti.'
+    },
+});
+
+// Global API rate limiter for all /api/* routes
+const globalApiLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 60, // 60 requests per minute per IP
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      error: 'Too many requests',
+      message: 'Terlalu banyak permintaan. Coba lagi dalam 1 menit.'
+    },
+});
+app.use('/api', globalApiLimiter);
 // Apply the rate limiter to the /api-proxy route before the main proxy logic
 app.use('/api-proxy', proxyLimiter);
+
+app.get('/health', (_req, res) => {
+  res.status(200).json({status: 'ok'});
+});
+
+app.get('/api/auth/session', authenticateFirebaseToken, async (req, res) => {
+  try {
+    const profile = await ensureUserProfile(req.user);
+    res.status(200).json({ user: profile, progress: profile.progress });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to load session.';
+    res.status(500).json({ error: 'SessionError', message });
+  }
+});
+
+app.get('/api/users/me', authenticateFirebaseToken, async (req, res) => {
+  try {
+    const profile = await ensureUserProfile(req.user);
+    res.status(200).json({ user: profile, progress: profile.progress });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to load profile.';
+    res.status(500).json({ error: 'ProfileError', message });
+  }
+});
+
+app.patch('/api/users/me/progress', authenticateFirebaseToken, async (req, res) => {
+  if (!req.body || typeof req.body !== 'object' || !req.body.progress || typeof req.body.progress !== 'object') {
+    return res.status(400).json({ error: 'Bad Request', message: 'progress object is required.' });
+  }
+
+  try {
+    const profile = await updateUserProgress(req.user, req.body.progress);
+    res.status(200).json({ user: profile, progress: profile.progress });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to update progress.';
+    res.status(500).json({ error: 'ProgressUpdateError', message });
+  }
+});
+
+app.get('/api/admin/health', authenticateFirebaseToken, requireAdmin, (_req, res) => {
+  res.status(200).json({ status: 'ok', role: 'admin' });
+});
 
 const API_CLIENT_MAP = [
  {
@@ -188,15 +279,19 @@ function getRequestHeaders(accessToken) {
 }
 
 // --- Proxy Endpoint ---
-app.post('/api-proxy', async (req, res) => {
+app.post('/api-proxy', authenticateFirebaseToken, enforceUserQuota, async (req, res) => {
 
-  // Check for the custom header added by the shim
+  // Check for the custom header added by the shim (defense-in-depth)
   if (req.headers['x-app-proxy'] !== PROXY_HEADER) {
-    return res.status(403).send('Forbidden: Request must originate from the Vertex App shim.');
+    return res.status(403).json({ error: 'Forbidden', message: 'Invalid proxy header.' });
+  }
+
+  if (!req.body || typeof req.body !== 'object') {
+    return res.status(400).json({ error: 'Bad Request', message: 'JSON body is required.' });
   }
 
   const { originalUrl, method, headers, body } = req.body;
-  if (!originalUrl) {
+  if (!originalUrl || typeof originalUrl !== 'string') {
     return res.status(400).send('Bad Request: originalUrl is required.');
   }
 
@@ -229,7 +324,7 @@ app.post('/api-proxy', async (req, res) => {
 
     const apiFetchOptions = {
       method: method || 'POST',
-      headers: {...apiHeaders, ...headers},
+      headers: {...apiHeaders, ...(headers && typeof headers === 'object' ? headers : {})},
       body: body ? body : undefined,
     };
 
@@ -306,12 +401,141 @@ app.post('/api-proxy', async (req, res) => {
   } catch (error) {
     console.error(`[Node Proxy] Error proxying request for ${apiClient.name}`);
     console.error(error)
-    res.status(500).json({ error: error });
+    const message = error instanceof Error ? error.message : 'Unknown proxy error';
+    res.status(500).json({ error: 'ProxyError', message });
   }
 });
 
+// --- Leaderboard Endpoints ---
+app.get('/api/leaderboard/weekly', authenticateFirebaseToken, async (req, res) => {
+  try {
+    const leaderboard = await getWeeklyLeaderboard(20);
+    const userRank = await getUserRank(req.user.uid);
+    res.status(200).json({ leaderboard, currentUser: userRank });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to load leaderboard.';
+    console.error('[Leaderboard] Weekly error:', message);
+    res.status(500).json({ error: 'LeaderboardError', message });
+  }
+});
+
+app.get('/api/leaderboard/alltime', authenticateFirebaseToken, async (req, res) => {
+  try {
+    const leaderboard = await getAllTimeLeaderboard(20);
+    const userRank = await getUserRank(req.user.uid);
+    res.status(200).json({ leaderboard, currentUser: userRank });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to load leaderboard.';
+    console.error('[Leaderboard] All-time error:', message);
+    res.status(500).json({ error: 'LeaderboardError', message });
+  }
+});
+
+// --- Community Contribution Endpoints ---
+app.post('/api/contributions', authenticateFirebaseToken, async (req, res) => {
+  const { word, translation, example } = req.body || {};
+  if (!word || !translation) {
+    return res.status(400).json({ error: 'Bad Request', message: 'word and translation are required.' });
+  }
+
+  try {
+    const contribution = await submitContribution(req.user, { word, translation, example });
+    res.status(201).json({ contribution });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to submit contribution.';
+    res.status(500).json({ error: 'ContributionError', message });
+  }
+});
+
+app.get('/api/contributions/mine', authenticateFirebaseToken, async (req, res) => {
+  try {
+    const contributions = await getUserContributions(req.user.uid);
+    res.status(200).json({ contributions });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to load contributions.';
+    res.status(500).json({ error: 'ContributionError', message });
+  }
+});
+
+app.get('/api/admin/contributions', authenticateFirebaseToken, requireAdmin, async (req, res) => {
+  const status = req.query.status || 'pending';
+  try {
+    const contributions = await getContributions(status);
+    res.status(200).json({ contributions });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to load contributions.';
+    res.status(500).json({ error: 'ContributionError', message });
+  }
+});
+
+app.patch('/api/admin/contributions/:id', authenticateFirebaseToken, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { decision } = req.body || {};
+  if (!decision || !['approved', 'rejected'].includes(decision)) {
+    return res.status(400).json({ error: 'Bad Request', message: 'decision must be "approved" or "rejected".' });
+  }
+
+  try {
+    const result = await reviewContribution(id, req.user.uid, decision);
+    res.status(200).json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to review contribution.';
+    res.status(500).json({ error: 'ContributionError', message });
+  }
+});
+
+// --- Dictionary Cache Endpoint ---
+app.get('/api/dictionary/cache', authenticateFirebaseToken, async (req, res) => {
+  const word = req.query.word;
+  if (!word || typeof word !== 'string') {
+    return res.status(400).json({ error: 'Bad Request', message: 'word query parameter is required.' });
+  }
+
+  try {
+    const cached = await getCachedTranslation(word);
+    if (cached) {
+      res.status(200).json({ cached: true, result: cached });
+    } else {
+      res.status(404).json({ cached: false, result: null });
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'CacheError', message: 'Failed to check cache.' });
+  }
+});
+
+app.post('/api/dictionary/cache', authenticateFirebaseToken, async (req, res) => {
+  const { word, result } = req.body || {};
+  if (!word || !result) {
+    return res.status(400).json({ error: 'Bad Request', message: 'word and result are required.' });
+  }
+
+  try {
+    await cacheTranslation(word, result);
+    res.status(201).json({ cached: true });
+  } catch (error) {
+    res.status(500).json({ error: 'CacheError', message: 'Failed to cache result.' });
+  }
+});
+
+// --- TTS Endpoint ---
+app.post('/api/tts', ttsLimiter, authenticateFirebaseToken, enforceUserQuota, async (req, res) => {
+  await generateSpeech(req, res);
+});
+
+// SPA fallback: serve index.html for any non-API route (must be after all API routes)
+if (fs.existsSync(publicDir)) {
+  app.use((req, res, next) => {
+    // Only handle GET requests that aren't API calls and don't have a file extension match
+    if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/api-proxy') && !req.path.startsWith('/health')) {
+      res.sendFile(path.join(publicDir, 'index.html'));
+    } else {
+      next();
+    }
+  });
+}
+
 const server = app.listen(PORT, API_BACKEND_HOST, () => {
-  console.log(`Vertex AI Backend listening at http://localhost:${PORT}`);
+  console.log(`Vertex AI Backend listening at http://${API_BACKEND_HOST}:${PORT}`);
 });
 
 

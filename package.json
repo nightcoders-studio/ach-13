@@ -1,12 +1,18 @@
 {
   "name": "habaget",
-  "workspaces": ["frontend", "backend"], 
+  "private": true,
+  "workspaces": ["frontend", "backend"],
   "scripts": {
     "dev-frontend": "npm run dev --prefix frontend",
     "dev-backend": "npm run dev --prefix backend",
-    "dev": "concurrently \"npm run dev-frontend\" \"npm run dev-backend\""
+    "dev": "concurrently \"npm run dev-frontend\" \"npm run dev-backend\"",
+    "build": "npm run build --prefix frontend",
+    "typecheck": "npm run typecheck --prefix frontend",
+    "check:backend": "npm run check --prefix backend",
+    "start": "npm run start --prefix backend",
+    "seed:admin": "npm run seed:admin --prefix backend"
   },
   "devDependencies": {
-    "concurrently": "latest"
+    "concurrently": "9.2.1"
   }
 }

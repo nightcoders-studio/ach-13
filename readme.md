@@ -8,6 +8,8 @@ HabaGet adalah aplikasi belajar Bahasa Aceh berbasis AI, gamifikasi, kamus, ceri
 
 Phase 0 sudah dimulai pada 2026-06-01. Perbaikan awal yang sudah diterapkan: `.gitignore`, lockfile, dependency pinning, TypeScript config, import/type fix, scoring fix, `index.html` cleanup, warna `danger`, metadata permission microphone, backend `PORT`/`0.0.0.0`, health endpoint, basic request validation, dan `.env.local` dikeluarkan dari git tracking tanpa menghapus file lokal.
 
+Phase 2 foundation juga sudah dimulai pada 2026-06-01. Yang sudah ditambahkan: Firebase client SDK, Firebase Admin SDK, backend token verification, endpoint `/api/users/me`, endpoint `/api/users/me/progress`, endpoint `/api/admin/health`, route guard admin berbasis role, Firestore-backed profile/progress baseline, dan seed script admin. Target Google Cloud Project: `TrialProjek02` dengan ID `probable-force-311023`.
+
 ## Design Constraint
 
 Desain UI setiap halaman yang sudah ada dianggap fix. Pengembangan berikutnya harus mempertahankan layout, warna, komposisi, navigasi, dan gaya visual saat ini. Perubahan yang diperbolehkan hanya untuk integrasi data, perbaikan bug, aksesibilitas, validasi, loading/error state, keamanan, dan koneksi backend tanpa mengubah karakter visual halaman.

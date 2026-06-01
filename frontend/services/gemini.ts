@@ -1,12 +1,13 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { Question, DictionaryResult, Story } from './types';
+import { Question, DictionaryResult, Story } from '../types';
 
 // Initialize the SDK. Assumes API_KEY is available in the environment.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY, vertexai: true });
 const MODEL_NAME = 'gemini-2.5-flash';
 
 const SYSTEM_INSTRUCTION = `You are an expert in the Acehnese language (Bahasa Aceh) and Indonesian. 
-Your goal is to help users learn Acehnese. Provide accurate translations, culturally relevant examples, and clear explanations.`;
+Your goal is to help users learn Acehnese. Provide accurate translations, culturally relevant examples, and clear explanations.
+IMPORTANT: Always respond entirely in Bahasa Indonesia. Never use English in your responses. All explanations, nuances, context, and feedback must be written in Bahasa Indonesia.`;
 
 export const generateLesson = async (topic: string): Promise<Question[]> => {
     try {

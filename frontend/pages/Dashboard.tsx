@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, RotateCcw, Check, ChevronRight, BookOpen, RefreshCw } from 'lucide-react';
+import { Play, RotateCcw, Check, ChevronRight, BookOpen, RefreshCw, Loader2, Crown } from 'lucide-react';
 import { UserProgress } from '../types';
+import { firebaseAuth } from '../services/firebase';
+import { fetchLeaderboard, LeaderboardEntry } from '../services/api';
 
 interface DashboardProps {
     progress: UserProgress;
@@ -44,10 +46,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ progress }) => {
     const navigate = useNavigate();
     const [wordRevealed, setWordRevealed] = useState(false);
     const [wordOfTheDay, setWordOfTheDay] = useState(motivationalWords[0]);
+    const [topPlayers, setTopPlayers] = useState<LeaderboardEntry[]>([]);
+    const [userRank, setUserRank] = useState<LeaderboardEntry | null>(null);
 
     const generateNewWord = () => {
         let randomIndex = Math.floor(Math.random() * motivationalWords.length);
-        // Ensure we get a different word if possible
         while (motivationalWords[randomIndex].aceh === wordOfTheDay.aceh && motivationalWords.length > 1) {
             randomIndex = Math.floor(Math.random() * motivationalWords.length);
         }
@@ -56,13 +59,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ progress }) => {
     };
 
     useEffect(() => {
-        // Generate a random motivational word on component mount
         generateNewWord();
+        loadLeaderboard();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    const loadLeaderboard = async () => {
+        if (!firebaseAuth?.currentUser) return;
+        try {
+            const data = await fetchLeaderboard(firebaseAuth.currentUser, 'weekly');
+            setTopPlayers(data.leaderboard.slice(0, 3));
+            setUserRank(data.currentUser);
+        } catch (e) {
+            // Silently fail — dashboard still works without leaderboard
+        }
+    };
+
+    const AVATARS = ['🦁', '🐯', '🦊', '🐺', '🐧', '🐻', '🐼', '🐨'];
+
     const days = ['S', 'S', 'R', 'K', 'J', 'S', 'M'];
-    const currentDayIndex = 2; // Mocking Wednesday as current day for the streak UI
+    // Real streak: show completed days based on actual streak count
+    const today = new Date();
+    const currentDayIndex = (today.getDay() + 6) % 7; // Monday=0, Sunday=6 (Indonesian week)
+    const streakDays = Math.min(progress.streak, 7);
 
     return (
         <div className="flex-1 overflow-y-auto pb-24 bg-background">
@@ -83,14 +102,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ progress }) => {
             <div className="bg-white rounded-3xl p-5 shadow-sm mx-5 -mt-8 relative z-10 border border-gray-100">
                 <div className="flex justify-between items-end mb-3">
                     <div>
-                        <h2 className="text-primary font-extrabold text-base">Level Progres</h2>
+                        <h2 className="text-primary font-extrabold text-base">Level {progress.level}</h2>
                         <p className="text-gray-600 text-sm font-semibold">{progress.leaderboardCategory || 'Aneuk Miet'}</p>
                     </div>
-                    <p className="text-primary font-extrabold text-sm">{progress.xp}/500 XP</p>
+                    <p className="text-primary font-extrabold text-sm">{progress.xp % 100}/100 XP</p>
                 </div>
                 <div className="h-3.5 bg-gray-100 rounded-full overflow-hidden flex">
-                    <div className="h-full bg-primary rounded-full" style={{ width: `${(progress.xp / 500) * 100}%` }}></div>
+                    <div className="h-full bg-primary rounded-full" style={{ width: `${(progress.xp % 100)}%` }}></div>
                 </div>
+                <p className="text-xs text-gray-400 font-medium mt-2">{100 - (progress.xp % 100)} XP lagi ke Level {progress.level + 1}</p>
             </div>
 
             {/* Streak Card */}
@@ -98,7 +118,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ progress }) => {
                 <h3 className="text-gray-500 font-extrabold text-xs tracking-widest mb-4 uppercase">Streak Belajar</h3>
                 <div className="flex justify-between items-center">
                     {days.map((day, i) => {
-                        const isCompleted = i <= currentDayIndex;
+                        // Show streak: mark days up to streak count ending at today
+                        const isCompleted = i <= currentDayIndex && (currentDayIndex - i) < streakDays;
                         return (
                             <div key={i} className="flex flex-col items-center gap-2">
                                 <div className={`w-9 h-9 rounded-full flex items-center justify-center shadow-sm ${isCompleted ? 'bg-primary text-white' : 'bg-gray-100 text-gray-400'}`}>
@@ -203,6 +224,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ progress }) => {
                     </div>
                     <ChevronRight className="w-6 h-6 text-tertiary shrink-0" />
                 </button>
+
+                {/* Subscribe Banner */}
+                {!progress.subscribed && (
+                    <button 
+                        onClick={() => navigate('/langganan')}
+                        className="w-full bg-gradient-to-r from-[#ffc800] to-[#ff9500] rounded-3xl p-4 flex items-center text-left shadow-md hover:shadow-lg transition-all"
+                    >
+                        <div className="w-12 h-12 bg-white/30 rounded-full flex items-center justify-center mr-4 shrink-0">
+                            <Crown className="w-6 h-6 text-white" />
+                        </div>
+                        <div className="flex-1">
+                            <h4 className="font-extrabold text-white text-lg">Langganan Premium</h4>
+                            <p className="text-white/90 text-sm font-semibold">Unlock semua fitur tanpa batas</p>
+                        </div>
+                        <ChevronRight className="w-6 h-6 text-white shrink-0" />
+                    </button>
+                )}
             </div>
 
             {/* Leaderboard Preview */}
@@ -213,28 +251,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ progress }) => {
                 </div>
                 
                 <div className="space-y-4">
-                    <div className="flex items-center">
-                        <span className="w-6 font-extrabold text-secondary text-lg text-center">1</span>
-                        <div className="w-10 h-10 bg-orange-100 rounded-full mx-3 flex items-center justify-center text-xl">🦊</div>
-                        <span className="flex-1 font-extrabold text-gray-800">Cut Meutia</span>
-                        <span className="font-extrabold text-gray-600">1,240 XP</span>
-                    </div>
-                    <div className="flex items-center">
-                        <span className="w-6 font-extrabold text-gray-400 text-lg text-center">2</span>
-                        <div className="w-10 h-10 bg-yellow-100 rounded-full mx-3 flex items-center justify-center text-xl">🐯</div>
-                        <span className="flex-1 font-extrabold text-gray-800">Teuku Umar</span>
-                        <span className="font-extrabold text-gray-600">1,105 XP</span>
-                    </div>
-                    <div className="flex items-center">
-                        <span className="w-6 font-extrabold text-orange-400 text-lg text-center">3</span>
-                        <div className="w-10 h-10 bg-red-100 rounded-full mx-3 flex items-center justify-center text-xl">🦁</div>
-                        <span className="flex-1 font-extrabold text-gray-800 leading-tight">Laksamana<br/>Malahayati</span>
-                        <span className="font-extrabold text-gray-600">980 XP</span>
-                    </div>
+                    {topPlayers.length > 0 ? topPlayers.map((player, idx) => (
+                        <div key={player.uid} className="flex items-center">
+                            <span className={`w-6 font-extrabold text-lg text-center ${idx === 0 ? 'text-secondary' : idx === 1 ? 'text-gray-400' : 'text-orange-400'}`}>{idx + 1}</span>
+                            <div className={`w-10 h-10 rounded-full mx-3 flex items-center justify-center text-xl ${idx === 0 ? 'bg-orange-100' : idx === 1 ? 'bg-yellow-100' : 'bg-red-100'}`}>{AVATARS[idx]}</div>
+                            <span className="flex-1 font-extrabold text-gray-800 truncate">{player.name}</span>
+                            <span className="font-extrabold text-gray-600">{player.xp.toLocaleString('id-ID')} XP</span>
+                        </div>
+                    )) : (
+                        <p className="text-gray-400 text-sm font-medium text-center py-4">Mulai belajar untuk muncul di peringkat!</p>
+                    )}
                 </div>
 
                 <div className="mt-5 bg-primary text-white rounded-2xl p-4 flex items-center shadow-md">
-                    <span className="w-6 font-extrabold text-lg text-center">5</span>
+                    <span className="w-6 font-extrabold text-lg text-center">{userRank?.rank || '-'}</span>
                     <div className="w-10 h-10 bg-white/20 rounded-full mx-3 flex items-center justify-center text-xl">🐧</div>
                     <span className="flex-1 font-extrabold">Kamu ({progress.leaderboardCategory || 'Aneuk Miet'})</span>
                     <span className="font-extrabold">{progress.xp} XP</span>

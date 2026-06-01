@@ -4,6 +4,7 @@ import { BookOpen, Loader2, ChevronRight, ArrowLeft, Play, Square, Volume2 } fro
 import { generateStory } from '../services/gemini';
 import { Story } from '../types';
 import { Button } from '../components/Button';
+import { firebaseAuth } from '../services/firebase';
 
 export const Stories: React.FC = () => {
     const navigate = useNavigate();
@@ -11,6 +12,8 @@ export const Stories: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [revealedSentences, setRevealedSentences] = useState<Set<number>>(new Set());
     const [isPlaying, setIsPlaying] = useState(false);
+    const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+    const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
     const loadNewStory = async () => {
         setLoading(true);
@@ -49,28 +52,82 @@ export const Stories: React.FC = () => {
         });
     };
 
-    const playStoryAudio = () => {
+    const playStoryAudio = async () => {
         if (!story) return;
         
+        // Prevent multiple clicks while loading
+        if (isLoadingAudio) return;
+
         if (isPlaying) {
+            // Stop current audio
+            if (audioRef.current) {
+                audioRef.current.pause();
+                audioRef.current.remove();
+                audioRef.current = null;
+            }
             window.speechSynthesis.cancel();
             setIsPlaying(false);
             return;
         }
 
-        if ('speechSynthesis' in window) {
-            const fullText = story.sentences.map(s => s.aceh).join('. ');
-            const utterance = new SpeechSynthesisUtterance(fullText);
-            utterance.lang = 'id-ID'; // Fallback to Indonesian voice
-            utterance.rate = 0.85; // Slightly slower for storytelling
-            
-            utterance.onend = () => setIsPlaying(false);
-            utterance.onerror = () => setIsPlaying(false);
-            
-            setIsPlaying(true);
-            window.speechSynthesis.speak(utterance);
-        } else {
-            alert("Browser Anda tidak mendukung fitur audio.");
+        setIsLoadingAudio(true);
+        setIsPlaying(true);
+
+        const fullText = story.sentences.map(s => s.aceh).join('. ');
+        
+        try {
+            // Get auth token for TTS endpoint
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+            if (firebaseAuth?.currentUser) {
+                const token = await firebaseAuth.currentUser.getIdToken();
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
+            const response = await fetch('/api/tts', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ text: fullText, voiceName: 'Kore' }),
+            });
+
+            if (!response.ok) {
+                throw new Error(`TTS API returned ${response.status}`);
+            }
+
+            const audioBlob = await response.blob();
+            const audioUrl = URL.createObjectURL(audioBlob);
+            const audio = new Audio(audioUrl);
+            audio.setAttribute('data-story-audio', 'true');
+            audioRef.current = audio;
+
+            audio.onended = () => {
+                setIsPlaying(false);
+                URL.revokeObjectURL(audioUrl);
+                audioRef.current = null;
+            };
+            audio.onerror = () => {
+                setIsPlaying(false);
+                URL.revokeObjectURL(audioUrl);
+                audioRef.current = null;
+            };
+
+            await audio.play();
+        } catch (error) {
+            console.warn('Gemini TTS failed, falling back to browser speech:', error);
+            // Fallback to browser speechSynthesis
+            if ('speechSynthesis' in window) {
+                const fullText = story.sentences.map(s => s.aceh).join('. ');
+                const utterance = new SpeechSynthesisUtterance(fullText);
+                utterance.lang = 'id-ID';
+                utterance.rate = 0.85;
+                utterance.onend = () => setIsPlaying(false);
+                utterance.onerror = () => setIsPlaying(false);
+                window.speechSynthesis.speak(utterance);
+            } else {
+                setIsPlaying(false);
+                alert("Gagal memutar audio.");
+            }
+        } finally {
+            setIsLoadingAudio(false);
         }
     };
 
@@ -116,9 +173,14 @@ export const Stories: React.FC = () => {
                                 {/* Audio Control */}
                                 <button 
                                     onClick={playStoryAudio}
-                                    className={`flex items-center justify-center py-3 px-4 rounded-2xl font-extrabold transition-all ${isPlaying ? 'bg-danger text-white shadow-lg shadow-danger/30' : 'bg-white text-primary shadow-lg'}`}
+                                    disabled={isLoadingAudio && !isPlaying}
+                                    className={`flex items-center justify-center py-3 px-4 rounded-2xl font-extrabold transition-all disabled:opacity-70 ${isPlaying ? 'bg-danger text-white shadow-lg shadow-danger/30' : 'bg-white text-primary shadow-lg'}`}
                                 >
-                                    {isPlaying ? (
+                                    {isLoadingAudio && !isPlaying ? (
+                                        <>
+                                            <Loader2 className="w-5 h-5 mr-2 animate-spin" /> Memuat Audio...
+                                        </>
+                                    ) : isPlaying ? (
                                         <>
                                             <Square className="w-5 h-5 mr-2 fill-current" /> Hentikan Audio
                                         </>

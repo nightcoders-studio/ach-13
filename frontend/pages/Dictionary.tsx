@@ -4,6 +4,8 @@ import { Search, BookA, Loader2, Sparkles, BookmarkPlus, BookmarkCheck, Volume2,
 import { Button } from '../components/Button';
 import { translateWord } from '../services/gemini';
 import { DictionaryResult } from '../types';
+import { firebaseAuth } from '../services/firebase';
+import { fetchCachedTranslation, saveCachedTranslation } from '../services/api';
 
 interface DictionaryProps {
     savedWords: string[];
@@ -16,6 +18,8 @@ export const Dictionary: React.FC<DictionaryProps> = ({ savedWords, onSaveWord }
     const [result, setResult] = useState<DictionaryResult | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [fromCache, setFromCache] = useState(false);
+    const [playingAudio, setPlayingAudio] = useState<string | null>(null);
 
     const handleSearch = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -24,11 +28,28 @@ export const Dictionary: React.FC<DictionaryProps> = ({ savedWords, onSaveWord }
         setLoading(true);
         setError('');
         setResult(null);
+        setFromCache(false);
 
         try {
+            // Try cache first
+            if (firebaseAuth?.currentUser) {
+                const cached = await fetchCachedTranslation(firebaseAuth.currentUser, query.trim());
+                if (cached) {
+                    setResult(cached);
+                    setFromCache(true);
+                    setLoading(false);
+                    return;
+                }
+            }
+
+            // Cache miss — call AI
             const data = await translateWord(query);
             if (data) {
                 setResult(data);
+                // Save to cache in background
+                if (firebaseAuth?.currentUser) {
+                    saveCachedTranslation(firebaseAuth.currentUser, query.trim(), data);
+                }
             } else {
                 setError('Tidak dapat menemukan terjemahan.');
             }
@@ -39,14 +60,47 @@ export const Dictionary: React.FC<DictionaryProps> = ({ savedWords, onSaveWord }
         }
     };
 
-    const playAudio = (text: string) => {
+    const playAudio = async (text: string) => {
+        if (playingAudio === text) return; // Already playing this text
+        setPlayingAudio(text);
+
+        try {
+            // Try Gemini TTS first
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+            if (firebaseAuth?.currentUser) {
+                const token = await firebaseAuth.currentUser.getIdToken();
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
+            const response = await fetch('/api/tts', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ text, voiceName: 'Kore' }),
+            });
+
+            if (response.ok) {
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+                const audio = new Audio(audioUrl);
+                audio.onended = () => { setPlayingAudio(null); URL.revokeObjectURL(audioUrl); };
+                audio.onerror = () => { setPlayingAudio(null); URL.revokeObjectURL(audioUrl); };
+                await audio.play();
+                return;
+            }
+        } catch (e) {
+            // Fallback below
+        }
+
+        // Fallback to browser speechSynthesis
         if ('speechSynthesis' in window) {
             const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'id-ID'; 
+            utterance.lang = 'id-ID';
             utterance.rate = 0.9;
+            utterance.onend = () => setPlayingAudio(null);
+            utterance.onerror = () => setPlayingAudio(null);
             window.speechSynthesis.speak(utterance);
         } else {
-            alert("Browser Anda tidak mendukung fitur audio.");
+            setPlayingAudio(null);
         }
     };
 

@@ -21,7 +21,10 @@ export const Profile: React.FC<ProfileProps> = ({ progress, onLogout, onMarkNoti
     }, []);
 
     const days = ['S', 'S', 'R', 'K', 'J', 'S', 'M'];
-    const currentDayIndex = 2; // Mocking Wednesday
+    // Real streak based on progress data
+    const today = new Date();
+    const currentDayIndex = (today.getDay() + 6) % 7; // Monday=0, Sunday=6
+    const streakDays = Math.min(progress.streak, 7);
 
     return (
         <div className="flex-1 overflow-y-auto pb-24 bg-background">
@@ -64,15 +67,15 @@ export const Profile: React.FC<ProfileProps> = ({ progress, onLogout, onMarkNoti
                 {/* Level Progress */}
                 <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
                     <div className="flex justify-between items-end mb-3">
-                        <h3 className="font-extrabold text-gray-800 text-sm">Level Progres</h3>
+                        <h3 className="font-extrabold text-gray-800 text-sm">Level {progress.level}</h3>
                         <p className="text-xs font-bold text-gray-500">
-                            <span className="text-primary">{progress.leaderboardCategory || 'Aneuk Miet'}</span> {progress.xp} / 500 XP
+                            <span className="text-primary">{progress.leaderboardCategory || 'Aneuk Miet'}</span> {progress.xp % 100} / 100 XP
                         </p>
                     </div>
                     <div className="h-3 bg-primaryLight rounded-full overflow-hidden flex mb-2">
-                        <div className="h-full bg-primary rounded-full" style={{ width: `${(progress.xp / 500) * 100}%` }}></div>
+                        <div className="h-full bg-primary rounded-full" style={{ width: `${progress.xp % 100}%` }}></div>
                     </div>
-                    <p className="text-xs text-gray-400 font-medium">160 XP lagi → Teungku Muda</p>
+                    <p className="text-xs text-gray-400 font-medium">{100 - (progress.xp % 100)} XP lagi → Level {progress.level + 1}</p>
                 </div>
 
                 {/* Stats Grid */}
@@ -96,7 +99,7 @@ export const Profile: React.FC<ProfileProps> = ({ progress, onLogout, onMarkNoti
                     <h3 className="font-extrabold text-gray-800 text-sm mb-4">Streak minggu ini</h3>
                     <div className="flex justify-between items-center px-2">
                         {days.map((day, i) => {
-                            const isCompleted = i <= currentDayIndex;
+                            const isCompleted = i <= currentDayIndex && (currentDayIndex - i) < streakDays;
                             return (
                                 <div key={i} className={`w-9 h-9 rounded-full flex items-center justify-center shadow-sm ${isCompleted ? 'bg-primary text-white' : 'bg-gray-100 text-gray-400'}`}>
                                     {isCompleted ? <Check className="w-5 h-5" strokeWidth={3} /> : <span className="text-sm font-extrabold">{day}</span>}
@@ -112,30 +115,36 @@ export const Profile: React.FC<ProfileProps> = ({ progress, onLogout, onMarkNoti
                         <Medal className="w-4 h-4 text-orange-500 mr-1.5" /> Lencana
                     </h3>
                     <div className="flex space-x-3 overflow-x-auto pb-2 -mx-2 px-2 snap-x">
-                        <div className="bg-tertiaryLight/30 border border-tertiaryLight rounded-2xl p-3 min-w-[100px] flex flex-col items-center text-center snap-start shrink-0">
-                            <span className="text-xs font-extrabold text-tertiaryDark mb-1">Aneuk Miet</span>
-                            <span className="text-[10px] text-tertiaryDark/70 font-medium mb-1">10 kata</span>
-                            <Check className="w-3 h-3 text-tertiaryDark" />
+                        {/* Aneuk Miet: 0+ XP */}
+                        <div className={`rounded-2xl p-3 min-w-[100px] flex flex-col items-center text-center snap-start shrink-0 ${progress.xp >= 0 ? 'bg-tertiaryLight/30 border border-tertiaryLight' : 'bg-gray-50 border border-gray-100 opacity-60'}`}>
+                            <span className={`text-xs font-extrabold mb-1 ${progress.xp >= 0 ? 'text-tertiaryDark' : 'text-gray-400'}`}>Aneuk Miet</span>
+                            <span className={`text-[10px] font-medium mb-1 ${progress.xp >= 0 ? 'text-tertiaryDark/70' : 'text-gray-400'}`}>0+ XP</span>
+                            {progress.xp >= 0 && <Check className="w-3 h-3 text-tertiaryDark" />}
                         </div>
-                        <div className="bg-primaryLight/30 border border-primaryLight rounded-2xl p-3 min-w-[100px] flex flex-col items-center text-center snap-start shrink-0">
-                            <span className="text-xs font-extrabold text-primaryDark mb-1">Pejuang</span>
-                            <span className="text-[10px] text-primaryDark/70 font-medium mb-1">3hr streak</span>
-                            <Check className="w-3 h-3 text-primaryDark" />
+                        {/* Ureung Muda: 100+ XP */}
+                        <div className={`rounded-2xl p-3 min-w-[100px] flex flex-col items-center text-center snap-start shrink-0 ${progress.xp >= 100 ? 'bg-primaryLight/30 border border-primaryLight' : 'bg-gray-50 border border-gray-100 opacity-60'}`}>
+                            <span className={`text-xs font-extrabold mb-1 ${progress.xp >= 100 ? 'text-primaryDark' : 'text-gray-400'}`}>Ureung Muda</span>
+                            <span className={`text-[10px] font-medium mb-1 ${progress.xp >= 100 ? 'text-primaryDark/70' : 'text-gray-400'}`}>100+ XP</span>
+                            {progress.xp >= 100 && <Check className="w-3 h-3 text-primaryDark" />}
                         </div>
-                        <div className="bg-gray-50 border border-gray-100 rounded-2xl p-3 min-w-[100px] flex flex-col items-center text-center snap-start shrink-0 opacity-60">
-                            <span className="text-xs font-extrabold text-gray-400 mb-1">Teungku</span>
-                            <span className="text-[10px] text-gray-400 font-medium mb-1">100 kata</span>
+                        {/* Ureung Chiek: 500+ XP */}
+                        <div className={`rounded-2xl p-3 min-w-[100px] flex flex-col items-center text-center snap-start shrink-0 ${progress.xp >= 500 ? 'bg-secondaryLight/30 border border-secondaryLight' : 'bg-gray-50 border border-gray-100 opacity-60'}`}>
+                            <span className={`text-xs font-extrabold mb-1 ${progress.xp >= 500 ? 'text-secondaryDark' : 'text-gray-400'}`}>Ureung Chiek</span>
+                            <span className={`text-[10px] font-medium mb-1 ${progress.xp >= 500 ? 'text-secondaryDark/70' : 'text-gray-400'}`}>500+ XP</span>
+                            {progress.xp >= 500 && <Check className="w-3 h-3 text-secondaryDark" />}
                         </div>
-                        <div className="bg-gray-50 border border-gray-100 rounded-2xl p-3 min-w-[100px] flex flex-col items-center text-center snap-start shrink-0 opacity-60">
-                            <span className="text-xs font-extrabold text-gray-400 mb-1">Ulama</span>
-                            <span className="text-[10px] text-gray-400 font-medium mb-1">500 kata</span>
+                        {/* Petuah: 1000+ XP */}
+                        <div className={`rounded-2xl p-3 min-w-[100px] flex flex-col items-center text-center snap-start shrink-0 ${progress.xp >= 1000 ? 'bg-[#FFF9E5] border border-[#F4C754]' : 'bg-gray-50 border border-gray-100 opacity-60'}`}>
+                            <span className={`text-xs font-extrabold mb-1 ${progress.xp >= 1000 ? 'text-yellow-700' : 'text-gray-400'}`}>Petuah</span>
+                            <span className={`text-[10px] font-medium mb-1 ${progress.xp >= 1000 ? 'text-yellow-600' : 'text-gray-400'}`}>1000+ XP</span>
+                            {progress.xp >= 1000 && <Check className="w-3 h-3 text-yellow-700" />}
                         </div>
                     </div>
                 </div>
 
                 {/* Menu Items */}
                 <div className="space-y-3">
-                    <button className="w-full bg-white rounded-2xl p-4 flex items-center justify-between shadow-sm border border-gray-100 hover:bg-gray-50 transition-colors">
+                    <button onClick={() => navigate('/kata-tersimpan')} className="w-full bg-white rounded-2xl p-4 flex items-center justify-between shadow-sm border border-gray-100 hover:bg-gray-50 transition-colors">
                         <div className="flex items-center">
                             <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center mr-3">
                                 <Bookmark className="w-5 h-5 text-gray-500 fill-current opacity-20" />

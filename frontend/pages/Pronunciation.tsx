@@ -104,15 +104,16 @@ export const Pronunciation: React.FC<PronunciationProps> = ({ onAddXp }) => {
     };
 
     return (
-        <div className="flex-1 flex flex-col bg-background p-4 pb-24">
-            <div className="flex items-center mb-8">
-                <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-gray-400 hover:text-gray-600">
-                    <ArrowLeft className="w-6 h-6" />
-                </button>
-                <h1 className="text-xl font-extrabold text-gray-800 ml-2">Latihan Pengucapan</h1>
-            </div>
+        <div className="flex-1 overflow-y-auto p-4 pb-24 bg-background">
+            <div className="max-w-md mx-auto">
+                <div className="flex items-center mb-8">
+                    <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-gray-400 hover:text-gray-600">
+                        <ArrowLeft className="w-6 h-6" />
+                    </button>
+                    <h1 className="text-xl font-extrabold text-gray-800 ml-2">Latihan Pengucapan</h1>
+                </div>
 
-            <div className="flex-1 flex flex-col items-center justify-center max-w-md mx-auto w-full">
+                <div className="flex flex-col items-center w-full">
                 
                 <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 w-full text-center mb-8">
                     <p className="text-gray-500 font-bold text-sm uppercase tracking-wider mb-2">Ucapkan kalimat ini</p>
@@ -156,6 +157,7 @@ export const Pronunciation: React.FC<PronunciationProps> = ({ onAddXp }) => {
                         </p>
                     </div>
                 )}
+                </div>
             </div>
         </div>
     );

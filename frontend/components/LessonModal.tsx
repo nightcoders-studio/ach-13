@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { Button } from './Button';
 import { generateLesson } from '../services/gemini';
@@ -8,15 +8,17 @@ interface LessonModalProps {
     topic: string;
     onClose: () => void;
     onComplete: (score: number) => void;
+    onWrongAnswer?: () => void;
 }
 
-export const LessonModal: React.FC<LessonModalProps> = ({ topic, onClose, onComplete }) => {
+export const LessonModal: React.FC<LessonModalProps> = ({ topic, onClose, onComplete, onWrongAnswer }) => {
     const [questions, setQuestions] = useState<Question[]>([]);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
     const [isChecking, setIsChecking] = useState(false);
     const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
     const [score, setScore] = useState(0);
+    const scoreRef = useRef(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -48,7 +50,14 @@ export const LessonModal: React.FC<LessonModalProps> = ({ topic, onClose, onComp
         
         const correct = opt === questions[currentIndex].answer;
         setIsCorrect(correct);
-        if (correct) setScore(s => s + 1);
+        if (correct) {
+            const nextScore = scoreRef.current + 1;
+            scoreRef.current = nextScore;
+            setScore(nextScore);
+        } else {
+            // Lose a heart on wrong answer
+            onWrongAnswer?.();
+        }
     };
 
     const handleNext = () => {
@@ -58,7 +67,7 @@ export const LessonModal: React.FC<LessonModalProps> = ({ topic, onClose, onComp
             setIsChecking(false);
             setIsCorrect(null);
         } else {
-            onComplete(score);
+            onComplete(scoreRef.current);
         }
     };
 

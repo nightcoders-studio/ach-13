@@ -1,0 +1,31 @@
+steps:
+  # Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/probable-force-311023/habaget', '.']
+
+  # Push the container image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/probable-force-311023/habaget']
+
+  # Deploy container image to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'habaget'
+      - '--image'
+      - 'gcr.io/probable-force-311023/habaget'
+      - '--region'
+      - 'asia-southeast1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--set-env-vars'
+      - 'GOOGLE_CLOUD_PROJECT=probable-force-311023,GOOGLE_CLOUD_LOCATION=asia-southeast1,PROXY_HEADER=${_PROXY_HEADER}'
+
+images:
+  - 'gcr.io/probable-force-311023/habaget'
+
+substitutions:
+  _PROXY_HEADER: 'habaget-proxy-secret-key'

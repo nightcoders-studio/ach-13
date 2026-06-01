@@ -107,14 +107,29 @@
       };
 
       try {
+        // Get Firebase auth token if available via global reference
+        let authToken = null;
+        try {
+          if (window.__HABAGET_AUTH && window.__HABAGET_AUTH.currentUser) {
+            authToken = await window.__HABAGET_AUTH.currentUser.getIdToken();
+          }
+        } catch (e) {
+          // Firebase not configured or user not logged in
+        }
+
         // Make a fetch request to the local Node JS proxy endpoint.
-        const proxyFetchOptions = {
-          method: 'POST',
-          headers: {
+        const proxyHeaders = {
             'Content-Type': 'application/json',
             // Add a random header to identify these proxied requests on the Node.js backend.
             'X-App-Proxy': '_KZhmNAmgzRDvQJyDFxN-DPGNUeuVuQI',
-          },
+        };
+        if (authToken) {
+          proxyHeaders['Authorization'] = `Bearer ${authToken}`;
+        }
+
+        const proxyFetchOptions = {
+          method: 'POST',
+          headers: proxyHeaders,
           body: JSON.stringify(requestDetails),
         };
 
